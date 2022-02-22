@@ -9,6 +9,7 @@ public class TapToCreateLandmark : MonoBehaviour
 {
 
     public GameObject markerPrefab;
+    public bool toggleGenerate;
 
     private GameObject markerObject;
     private ARRaycastManager arRayCastManager;
@@ -35,9 +36,9 @@ public class TapToCreateLandmark : MonoBehaviour
         }
     }
 
-    void Update()
+    void GenerateNewLandmark()
     {
-        if (!TryGetTouchPosition(out touchPosition)) { return; }
+        if (!TryGetTouchPosition(out touchPosition)) { return; } // if there are no touch inputs, return
         if (arRayCastManager.Raycast(touchPosition, hits, TrackableType.PlaneWithinPolygon))
         {
             var hitPose = hits[0].pose;
@@ -45,11 +46,20 @@ public class TapToCreateLandmark : MonoBehaviour
             {
                 markerObject = Instantiate(markerPrefab, hitPose.position, hitPose.rotation);
             }
-            else
-            {
-                markerObject.transform.position = hitPose.position;
-            }
-
         }
+    }
+
+    void MoveLandmark()
+    {
+        markerObject.transform.position = hitPose.position; // drag object in space
+    }
+
+    void Update()
+    {
+        if (toggleGenerate)
+        {
+            GenerateNewLandmark();
+        } else { MoveLandmark(); }
+        
     }
 }
