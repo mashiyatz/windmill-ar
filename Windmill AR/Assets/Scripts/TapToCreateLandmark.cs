@@ -38,6 +38,13 @@ public class TapToCreateLandmark : MonoBehaviour
     void Update()
     {
         if (!TryGetTouchPosition(out touchPosition)) { return; }
+
+/*        Ray ray = Camera.main.ScreenPointToRay(touchPosition);
+        if (Physics.Raycast(ray, out RaycastHit hit))
+        {
+            markerObject = hit.collider.gameObject.CompareTag("Landmark") ? hit.collider.gameObject : null;
+        }*/
+
         if (arRayCastManager.Raycast(touchPosition, hits, TrackableType.PlaneWithinPolygon))
         {
             var hitPose = hits[0].pose;
