@@ -7,59 +7,66 @@ using TMPro;
 using ARLocation;
 using Siccity.GLTFUtility;
 using System.IO;
+using System.Linq;
 
 public class FetchJsonData : MonoBehaviour
 {
-    private const string URL = "https://igbhggdacj.reearth.io/data.json";
+    public string inputURL = "igbhggdacj";
 
     public TextMeshProUGUI textBox;
+    public TMP_InputField inputBox;
     public GameObject markerPrefab;
-    public string filePath;
+    public string fileDir;
+    public Dictionary<string, Vector2> downloadURLs;
+    
+    private string URL;
 
     private void Start()
     {
-        filePath = $"{Application.dataPath}/Files/test.gltf";
+        fileDir = $"{Application.dataPath}/Files/"; 
+        downloadURLs = new Dictionary<string, Vector2>();
+        
     }
 
-    public void GenerateRequest()
+    public void GenerateRequest() 
     {
-        StartCoroutine(ProcessRequest(URL));
+        inputURL = inputBox.text;
+        URL = "https://" + inputURL + ".reearth.io/data.json";
+        StartCoroutine(DownloadAssets());
     }
 
-    private IEnumerator ProcessRequest(string uri)
+    private IEnumerator RetrieveModelData(string uri)
     {
-        using (UnityWebRequest request = UnityWebRequest.Get(uri)) // allow user to input their own Re:Earth URL, just need the name, other can be autofill
+        using UnityWebRequest request = UnityWebRequest.Get(uri);
+        yield return request.SendWebRequest();
+        if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
         {
-            yield return request.SendWebRequest();
-            if (request.result == UnityWebRequest.Result.ConnectionError)
-            {
-                Debug.Log(request.error);
-            } else
-            {
-                // Debug.Log(request.downloadHandler.text);
+            Debug.Log(request.error);
+        }
+        else
+        {
+            JSONNode reearthData = JSON.Parse(request.downloadHandler.text);
 
-                JSONNode reearthData = JSON.Parse(request.downloadHandler.text);
-
-                for (int i = 0; i < reearthData["layers"].Count; i++)
+            for (int i = 0; i < reearthData["layers"].Count; i++)
+            {
+                if (reearthData["layers"][i]["extensionId"] == "model")
                 {
-                    if (reearthData["layers"][i]["extensionId"] == "model")
-                    {
-                        float latitude = reearthData["layers"][i]["property"]["default"]["location"]["lat"];
-                        float longitude = reearthData["layers"][i]["property"]["default"]["location"]["lng"];
-                        string modelURL = reearthData["layers"][i]["property"]["default"]["model"];
-                        // string name = reearthData["layers"][i]["property"]["default"]["title"];
-                        GenerateLandmark(latitude, longitude, modelURL);
+                    float latitude = reearthData["layers"][i]["property"]["default"]["location"]["lat"];
+                    float longitude = reearthData["layers"][i]["property"]["default"]["location"]["lng"];
+                    string modelURL = reearthData["layers"][i]["property"]["default"]["model"];
+                    // string name = reearthData["layers"][i]["property"]["default"]["title"];
 
-                        textBox.text = "Lat: " + latitude.ToString() + "\nLon: " + longitude.ToString() + "\nURL: " + modelURL;
-                    }
+                    textBox.text = "Lat: " + latitude.ToString() + "\nLon: " + longitude.ToString() + "\nURL: " + modelURL;
+                    downloadURLs.Add(modelURL, new Vector2(latitude, longitude));
                 }
-                
             }
-
+            Debug.Log("URL scaping complete!");
         }
     }
 
-    private void GenerateLandmark(float lat, float lon, string url)
+
+
+    private void GenerateLandmark(float lat, float lon, GameObject model)
     {
         GameObject newLandmark;
         newLandmark = Instantiate(markerPrefab);
@@ -83,47 +90,49 @@ public class FetchJsonData : MonoBehaviour
             UseMovingAverage = false
         };
 
-        DownloadModel(url, newLandmark);
-
+        model.transform.SetParent(newLandmark.transform);
     }
 
-
-    private void DownloadModel(string url, GameObject landmark)
+    GameObject LoadModel(string url) 
     {
-        if (File.Exists(filePath))
-        {
-            Debug.Log("Found file locally, loading...");
-            LoadModel(landmark);
-            return;
-        }
-
-        StartCoroutine(GetFileRequest(url, (UnityWebRequest req) =>
-        { if (req.result == UnityWebRequest.Result.ConnectionError || req.result == UnityWebRequest.Result.ProtocolError)
-            {
-                Debug.Log($"{req.error} : {req.downloadHandler.text}");
-            } else
-            {
-                LoadModel(landmark);
-            } }
-    ));
-    }
-
-    void LoadModel(GameObject landmark)
-    {
-        GameObject model = Importer.LoadFromFile(filePath);
+        GameObject model = Importer.LoadFromFile(url);
         Debug.Log("Loaded file!");
-        model.transform.SetParent(landmark.transform);
+        return model;
     }
 
-    IEnumerator GetFileRequest(string url, System.Action<UnityWebRequest> callback)
+    IEnumerator DownloadAssets()
     {
-        using(UnityWebRequest req = UnityWebRequest.Get(url))
+        yield return StartCoroutine(RetrieveModelData(URL));
+
+        foreach (var item in downloadURLs)
         {
-            yield return req.SendWebRequest();
-            req.downloadHandler = new DownloadHandlerFile(filePath);
-            callback(req);
+            string filePath = fileDir + item.Key.Split('/').Last(); 
+
+            if (File.Exists(filePath))
+            {
+                Debug.Log("Found file locally, loading...");
+                GenerateLandmark(item.Value[0], item.Value[1], LoadModel(filePath));
+            }
+            else
+            {
+                using UnityWebRequest request = UnityWebRequest.Get(item.Key);
+                DownloadHandlerFile dlHandler = new DownloadHandlerFile(filePath)
+                {
+                    removeFileOnAbort = true
+                };
+                request.downloadHandler = dlHandler;
+
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.ConnectionError || request.result == UnityWebRequest.Result.ProtocolError)
+                {
+                    Debug.Log($"{request.error} : {request.downloadHandler.text}");
+                }
+                else
+                {
+                    GenerateLandmark(item.Value[0], item.Value[1], LoadModel(filePath));
+                }
+            }
         }
     }
-
-
 }
